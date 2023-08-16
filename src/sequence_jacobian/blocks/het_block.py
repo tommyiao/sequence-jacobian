@@ -495,10 +495,10 @@ class HetBlock(Block):
 
     '''Below added by Tommy for full-distribution simulation during transition'''
 
-    def get_policy_derivative(self, ss, inputs, outputs, T, h=1E-4, twosided=True):
+    def get_policy_derivative(self, ss, inputs, T=300, h=1E-4, twosided=True):
         '''Modified from _jacobian: return full distribution of policy derivatives wrt. inputs'''
         ss = self.extract_ss_dict(ss)
-        outputs = self.M_outputs.inv @ outputs
+        outputs = self.M_outputs.inv @ self.outputs
 
         # step 0: preliminary processing of steady state
         exog = self.make_exog_law_of_motion(ss)
