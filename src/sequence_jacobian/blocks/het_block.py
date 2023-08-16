@@ -563,7 +563,7 @@ class HetBlock(Block):
                                                             differentiable_hetoutput, law_of_motion, exog, True)
 
         # infer dimensions from this, initialize empty arrays, and fill in contemporaneous effect
-        curlyys = {k: np.empty((T,) + curlyV.shape) for k in curlyy.keys()}
+        curlyys = {k: np.empty((T,) + curlyy[0].shape) for k in curlyy.keys()}
 
         for k in curlyy.keys():
             curlyys[k][0] = curlyy[k]
