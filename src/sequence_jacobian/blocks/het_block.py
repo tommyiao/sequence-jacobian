@@ -492,3 +492,88 @@ class HetBlock(Block):
         else:
             return lottery_2d(d[self.policy[0]], d[self.policy[1]],
                         d[self.policy[0] + '_grid'], d[self.policy[1] + '_grid'], monotonic)
+
+    '''Below added by Tommy for full-distribution simulation during transition'''
+
+    def get_policy_derivative(self, ss, inputs, outputs, T, h=1E-4, twosided=True):
+        '''Modified from _jacobian: return full distribution of policy derivatives wrt. inputs'''
+        ss = self.extract_ss_dict(ss)
+        outputs = self.M_outputs.inv @ outputs
+
+        # step 0: preliminary processing of steady state
+        exog = self.make_exog_law_of_motion(ss)
+        endog = self.make_endog_law_of_motion(ss)
+        differentiable_backward_fun, differentiable_hetinputs, differentiable_hetoutputs = self.jac_backward_prelim(ss, h, exog, twosided)
+        law_of_motion = CombinedTransition([exog, endog]).forward_shockable(ss['Dbeg'])
+        exog_by_output = {k: exog.expectation_shockable(ss[k]) for k in outputs | self.backward}
+
+        # step 1 of fake news algorithm
+        # compute curlyy (backward iteration) for each input i
+        curlyys = {}
+        for i in inputs:
+            curlyys[i] = self.backward_fakenews_policy_only(i, outputs, T, differentiable_backward_fun,
+                                                                        differentiable_hetinputs, differentiable_hetoutputs,
+                                                                        law_of_motion, exog_by_output)
+        return curlyys
+
+    def backward_step_fakenews_policy_only(self, din_dict, output_list, differentiable_backward_fun,
+                               differentiable_hetoutput, law_of_motion: ForwardShockableTransition,
+                               exog: Dict[str, ExpectationShockableTransition], maybe_exog_shock=False):
+        """Modified version of backward_step_fakenews: return full distribution of outputs"""
+                               
+        # shock perturbs outputs
+        shocked_outputs = differentiable_backward_fun.diff(din_dict)
+        curlyV = {k: law_of_motion[0].expectation(shocked_outputs[k]) for k in self.backward}
+
+        # if there might be a shock to exogenous processes, figure out what it is
+        if maybe_exog_shock:
+            shocks_to_exog = [din_dict.get(k, None) for k in self.exogenous]
+        else:
+            shocks_to_exog = None
+
+        # Affect outcomes today
+        if differentiable_hetoutput is not None and (output_list & differentiable_hetoutput.outputs):
+            shocked_outputs.update(differentiable_hetoutput.diff({**shocked_outputs, **din_dict}, outputs=differentiable_hetoutput.outputs & output_list))
+
+        # add effects from perturbation to exog on beginning-of-period expectations in curlyV and curlyY
+        if maybe_exog_shock:
+            for k in curlyV:
+                shock = exog[k].expectation_shock(shocks_to_exog)
+                if shock is not None:
+                    curlyV[k] += shock
+            
+            for k in shocked_outputs:
+                shock = exog[k].expectation_shock(shocks_to_exog)
+                # maybe could be more efficient since we don't need to calculate pointwise?
+                if shock is not None:
+                    shocked_outputs[k] += shock
+
+        return curlyV, shocked_outputs
+    
+    def backward_fakenews_policy_only(self, input_shocked, output_list, T, differentiable_backward_fun,
+                            differentiable_hetinput, differentiable_hetoutput,
+                            law_of_motion: ForwardShockableTransition, exog: Dict[str, ExpectationShockableTransition]):
+        """Modified version of backward_fakenews: return full distribution of outputs"""
+        # contemporaneous effect of unit scalar shock to input_shocked
+        din_dict = {input_shocked: 1}
+        if differentiable_hetinput is not None and input_shocked in differentiable_hetinput.inputs:
+            din_dict.update(differentiable_hetinput.diff({input_shocked: 1}))
+
+        curlyV, curlyy = self.backward_step_fakenews_policy_only(din_dict, output_list, differentiable_backward_fun,
+                                                            differentiable_hetoutput, law_of_motion, exog, True)
+
+        # infer dimensions from this, initialize empty arrays, and fill in contemporaneous effect
+        curlyys = {k: np.empty((T,) + curlyV.shape) for k in curlyy.keys()}
+
+        for k in curlyy.keys():
+            curlyys[k][0] = curlyy[k]
+
+        # fill in anticipation effects of shock up to horizon T
+        for t in range(1, T):
+            curlyV, curlyy = self.backward_step_fakenews_policy_only({k+'_p': v for k, v in curlyV.items()},
+                                                    output_list, differentiable_backward_fun,
+                                                    differentiable_hetoutput, law_of_motion, exog)
+            for k in curlyy.keys():
+                curlyys[k][t] = curlyy[k]
+
+        return curlyys
