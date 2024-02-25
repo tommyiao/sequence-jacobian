@@ -577,3 +577,26 @@ class HetBlock(Block):
                 curlyys[k][t] = curlyy[k]
 
         return curlyys
+
+    def get_curlyDs(self, ss, inputs, outputs, T, h=1E-4, twosided=False):
+            """Modified from _Jacobian: extract curlyDs and law_of_motion"""
+            ss = self.extract_ss_dict(ss)
+            outputs = self.M_outputs.inv @ outputs
+    
+            # step 0: preliminary processing of steady state
+            exog = self.make_exog_law_of_motion(ss)
+            endog = self.make_endog_law_of_motion(ss)
+            differentiable_backward_fun, differentiable_hetinputs, differentiable_hetoutputs = self.jac_backward_prelim(ss, h, exog, twosided)
+            law_of_motion = CombinedTransition([exog, endog]).forward_shockable(ss['Dbeg'])
+            exog_by_output = {k: exog.expectation_shockable(ss[k]) for k in outputs | self.backward}
+    
+            # step 1 of fake news algorithm
+            # compute curlyY and curlyD (backward iteration) for each input i
+            curlyYs, curlyDs = {}, {}
+            for i in inputs:
+                curlyYs[i], curlyDs[i] = self.backward_fakenews(i, outputs, T, differentiable_backward_fun,
+                                                                          differentiable_hetinputs, differentiable_hetoutputs,
+                                                                          law_of_motion, exog_by_output)
+    
+            return curlyDs, law_of_motion
+
