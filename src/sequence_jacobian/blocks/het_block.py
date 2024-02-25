@@ -531,6 +531,12 @@ class HetBlock(Block):
         else:
             shocks_to_exog = None
 
+        # # perturbation to exog and outputs outputs affects distribution tomorrow
+        # policy_shock = [shocked_outputs[k] for k in self.policy]
+        # if len(policy_shock) == 1:
+        #     policy_shock = policy_shock[0]
+        # curlyD = law_of_motion.forward_shock([shocks_to_exog, policy_shock])
+
         # Affect outcomes today
         if differentiable_hetoutput is not None and (output_list & differentiable_hetoutput.outputs):
             shocked_outputs.update(differentiable_hetoutput.diff({**shocked_outputs, **din_dict}, outputs=differentiable_hetoutput.outputs & output_list))
@@ -578,7 +584,7 @@ class HetBlock(Block):
 
         return curlyys
 
-    def get_curlyDs(self, ss, inputs, outputs, T, h=1E-4, twosided=False):
+    def get_curlyD(self, ss, inputs, outputs, T=300, h=1E-4, twosided=True):
             """Modified from _Jacobian: extract curlyDs and law_of_motion"""
             ss = self.extract_ss_dict(ss)
             outputs = self.M_outputs.inv @ outputs
@@ -597,6 +603,7 @@ class HetBlock(Block):
                 curlyYs[i], curlyDs[i] = self.backward_fakenews(i, outputs, T, differentiable_backward_fun,
                                                                           differentiable_hetinputs, differentiable_hetoutputs,
                                                                           law_of_motion, exog_by_output)
+
     
             return curlyDs, law_of_motion
 
