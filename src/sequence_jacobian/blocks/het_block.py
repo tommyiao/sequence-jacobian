@@ -584,7 +584,7 @@ class HetBlock(Block):
 
         return curlyys
 
-    def get_curlyD(self, ss, inputs, outputs, T=300, h=1E-4, twosided=True):
+    def get_curlyD(self, ss, inputs, outputs=['C'], T=300, h=1E-4, twosided=True):
             """Modified from _Jacobian: extract curlyDs and law_of_motion"""
             ss = self.extract_ss_dict(ss)
             outputs = self.M_outputs.inv @ outputs
